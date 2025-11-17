@@ -7,7 +7,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 
-
 class DBConnection {
     private static final String URL = "jdbc:mysql://localhost:3306/eventdb/eventdb?serverTimezone=UTC&useSSL=false";
     private static final String USER = "root"; 
@@ -743,3 +742,4 @@ public class EventManagementApp {
         });
     }
 }
+
