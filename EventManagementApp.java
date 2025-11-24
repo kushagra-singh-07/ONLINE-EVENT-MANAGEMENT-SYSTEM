@@ -8,84 +8,59 @@ import java.util.Date;
 
 
 class DBConnection {
-    private static final String URL = "jdbc:mysql://localhost:3306/eventdb/eventdb?serverTimezone=UTC&useSSL=false";
-    private static final String USER = "root"; 
-    private static final String PASS = "";     
+    private static final String URL = "jdbc:mysql://localhost:3306/eventdb";
+    private static final String USER = "root";
+    private static final String PASS = "";
 
-    public static Connection getConnection() throws Exception {
-        Class.forName("com.mysql.cj.jdbc.Driver");
-        return DriverManager.getConnection(URL, USER, PASS);
-    }
-
-    
-    public static void ensureSchema() {
-        String createCustomers = "CREATE TABLE IF NOT EXISTS customers (" +
-                "id INT AUTO_INCREMENT PRIMARY KEY, " +
-                "name VARCHAR(100), phone VARCHAR(20), address VARCHAR(200)" +
-                ") ENGINE=InnoDB;";
-        String createBookings = "CREATE TABLE IF NOT EXISTS bookings (" +
-                "id INT AUTO_INCREMENT PRIMARY KEY, " +
-                "customer_id INT, " +
-                "event_type VARCHAR(100), event_date VARCHAR(50), event_time VARCHAR(50), venue VARCHAR(200), " +
-                "price DOUBLE, paid_amount DOUBLE, extra_details TEXT, " +
-                "FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE SET NULL" +
-                ") ENGINE=InnoDB;";
-        try (Connection con = getConnection(); Statement st = con.createStatement()) {
-            st.execute(createCustomers);
-            st.execute(createBookings);
+    public static Connection getConnection() {
+        try {
+            return DriverManager.getConnection(URL, USER, PASS);
         } catch (Exception e) {
-          
-            System.err.println("Warning: Could not ensure DB schema: " + e.getMessage());
+            e.printStackTrace(); 
+            return null;
         }
     }
 }
+
 
 class CustomerDAO {
     public int saveCustomer(String name, String phone, String address) throws Exception {
         String sql = "INSERT INTO customers (name, phone, address) VALUES (?, ?, ?)";
-        try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setString(1, name);
-            ps.setString(2, phone);
-            ps.setString(3, address);
-            int affected = ps.executeUpdate();
-            if (affected == 0) throw new Exception("Insert failed, no rows affected.");
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) return rs.getInt(1);
+        try (Connection con = DBConnection.getConnection()) {
+            if (con == null) throw new Exception("JDBC Not Connected");
+            try (PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                ps.setString(1, name);
+                ps.setString(2, phone);
+                ps.setString(3, address);
+                int affected = ps.executeUpdate();
+                if (affected == 0) throw new Exception("Insert failed, no rows affected.");
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) return rs.getInt(1);
+                    else return -1;
+                }
             }
         }
-        return -1;
     }
 
-   
-    public int saveBooking(int custId, String type, String date, String time, double price, String venue, String extra) throws Exception {
+    public void saveBooking(int custId, String type, String date, String time, double price, String venue, String extra) throws Exception {
         String sql = "INSERT INTO bookings (customer_id, event_type, event_date, event_time, price, venue, extra_details) VALUES (?,?,?,?,?,?,?)";
-        try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-            if (custId > 0) ps.setInt(1, custId);
-            else ps.setNull(1, Types.INTEGER);
-            ps.setString(2, type);
-            ps.setString(3, date);
-            ps.setString(4, time);
-            ps.setDouble(5, price);
-            ps.setString(6, venue);
-            ps.setString(7, extra);
-            int affected = ps.executeUpdate();
-            if (affected == 0) throw new Exception("Insert failed, no rows affected.");
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) return rs.getInt(1);
+        try (Connection con = DBConnection.getConnection()) {
+            if (con == null) throw new Exception("JDBC Not Connected");
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                if (custId > 0) ps.setInt(1, custId);
+                else ps.setNull(1, Types.INTEGER);
+                ps.setString(2, type);
+                ps.setString(3, date);
+                ps.setString(4, time);
+                ps.setDouble(5, price);
+                ps.setString(6, venue);
+                ps.setString(7, extra);
+                ps.executeUpdate();
             }
-        }
-        return -1;
-    }
-
-    public void markBookingPaid(int bookingId, double amount) throws Exception {
-        String sql = "UPDATE bookings SET paid_amount = ? WHERE id = ?";
-        try (Connection con = DBConnection.getConnection(); PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setDouble(1, amount);
-            ps.setInt(2, bookingId);
-            ps.executeUpdate();
         }
     }
 }
+
 
 abstract class Event {
     private String date;
@@ -97,8 +72,9 @@ abstract class Event {
     public String getTime(){ return time; }
     public String getVenue(){ return venue; }
     public abstract double calculatePrice();
-    public String extraDetails(){ return ""; }
+    public String extraDetails(){ return ""; } 
 }
+
 
 class MarriageEvent extends Event {
     private String bride, groom;
@@ -149,22 +125,27 @@ class AnniversaryEvent extends Event {
     public String extraDetails(){ return "Couple: "+coupleNames+", Years: "+yearsCompleted+", Venue: "+venueType; }
 }
 
+
 class PaymentProcessor {
     public synchronized void processPayment(double amount) throws Exception {
         if(amount <= 0) throw new Exception("Invalid Amount");
-       
+        // simulate processing
         try { Thread.sleep(1500); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 }
 
+
 class PlaceholderTextField extends JTextField {
     private String placeholder;
     private Color placeholderColor = Color.GRAY;
+    private boolean showPlaceholderAlways = false;
 
     public PlaceholderTextField(String placeholder) {
         super();
         this.placeholder = placeholder;
+      
         setOpaque(true);
+        
         setMargin(new Insets(2,6,2,2));
     }
 
@@ -178,7 +159,7 @@ class PlaceholderTextField extends JTextField {
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        if (getText() == null || getText().length() == 0) {
+        if ((getText() == null || getText().length() == 0) && ! (showPlaceholderAlways && getText()!=null)) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setColor(placeholderColor);
             Font prev = g2.getFont();
@@ -192,13 +173,17 @@ class PlaceholderTextField extends JTextField {
     }
 
     public void setPlaceholderColor(Color c){ this.placeholderColor = c; }
+    public void setShowPlaceholderAlways(boolean v){ this.showPlaceholderAlways = v; }
 }
 
 class ValidationUtils {
     private static final SimpleDateFormat DATE_FMT = new SimpleDateFormat("dd/MM/yyyy");
     private static final SimpleDateFormat TIME_FMT = new SimpleDateFormat("hh:mm a");
 
-    static { DATE_FMT.setLenient(false); TIME_FMT.setLenient(false); }
+    static {
+        DATE_FMT.setLenient(false);
+        TIME_FMT.setLenient(false);
+    }
 
     public static boolean isValidPhone(String phone) {
         return phone != null && phone.matches("\\d{7,15}");
@@ -255,6 +240,7 @@ class CustomerForm extends JFrame {
                 CustomerDAO dao = new CustomerDAO();
                 custId = dao.saveCustomer(name, phone, address);
             } catch(Exception ex) {
+                
                 JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving customer. Proceeding without DB save.","Warning",JOptionPane.WARNING_MESSAGE);
             }
 
@@ -264,6 +250,7 @@ class CustomerForm extends JFrame {
         });
     }
 }
+
 
 class EventSelection extends JFrame {
     int custId;
@@ -294,6 +281,7 @@ class EventSelection extends JFrame {
     }
 }
 
+
 abstract class EventForm extends JFrame {
     int custId; EventSelection prevPage;
     EventForm(int custId, EventSelection prevPage) {
@@ -301,6 +289,7 @@ abstract class EventForm extends JFrame {
         setSize(560,520); setLayout(null); setDefaultCloseOperation(EXIT_ON_CLOSE); setLocationRelativeTo(null);
     }
 }
+
 
 class MarriageForm extends EventForm {
     public MarriageForm(int custId, EventSelection prevPage){
@@ -355,21 +344,20 @@ class MarriageForm extends EventForm {
             ev.setBride(bride); ev.setGroom(groom);
             ev.setDetails(date,time,venue);
 
-            int bookingId = -1;
             try {
-                CustomerDAO dao = new CustomerDAO();
-                bookingId = dao.saveBooking(custId,"Marriage",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails());
+                if(custId!=-1) new CustomerDAO().saveBooking(custId,"Marriage",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails());
             } catch(Exception ex) {
                 JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving booking. Booking not saved in DB.","Warning",JOptionPane.WARNING_MESSAGE);
             }
 
-            new PaymentPage(custId,"Marriage",ev,prevPage, bookingId).setVisible(true);
+            new PaymentPage(custId,"Marriage",ev,prevPage).setVisible(true);
             dispose();
         });
 
         back.addActionListener(e -> { prevPage.setVisible(true); dispose(); });
     }
 }
+
 
 class BirthdayForm extends EventForm {
     public BirthdayForm(int custId, EventSelection prevPage){
@@ -416,11 +404,10 @@ class BirthdayForm extends EventForm {
             BirthdayEvent ev=new BirthdayEvent();
             ev.setBirthdayName(name); ev.setDetails(date,time,venue);
 
-            int bookingId = -1;
-            try { CustomerDAO dao = new CustomerDAO(); bookingId = dao.saveBooking(custId,"Birthday Party",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
+            try { if(custId!=-1) new CustomerDAO().saveBooking(custId,"Birthday Party",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
             catch(Exception ex) { JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving booking. Booking not saved in DB.","Warning",JOptionPane.WARNING_MESSAGE); }
 
-            new PaymentPage(custId,"Birthday Party",ev,prevPage, bookingId).setVisible(true);
+            new PaymentPage(custId,"Birthday Party",ev,prevPage).setVisible(true);
             dispose();
         });
 
@@ -483,17 +470,17 @@ class EngagementForm extends EventForm {
             ev.setCoupleNames(couple); ev.setVenuePreference(venuePref); ev.setGuestCount(guests);
             ev.setDetails(date,time,venuePref);
 
-            int bookingId = -1;
-            try { CustomerDAO dao = new CustomerDAO(); bookingId = dao.saveBooking(custId,"Engagement Ceremony",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
+            try { if(custId!=-1) new CustomerDAO().saveBooking(custId,"Engagement Ceremony",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
             catch(Exception ex) { JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving booking. Booking not saved in DB.","Warning",JOptionPane.WARNING_MESSAGE); }
 
-            new PaymentPage(custId,"Engagement Ceremony",ev,prevPage, bookingId).setVisible(true);
+            new PaymentPage(custId,"Engagement Ceremony",ev,prevPage).setVisible(true);
             dispose();
         });
 
         back.addActionListener(e -> { prevPage.setVisible(true); dispose(); });
     }
 }
+
 
 class BabyShowerForm extends EventForm {
     public BabyShowerForm(int custId, EventSelection prevPage){
@@ -548,17 +535,17 @@ class BabyShowerForm extends EventForm {
             ev.setMotherName(mother); ev.setTheme(theme); ev.setGuestCount(guests);
             ev.setDetails(date,time,"");
 
-            int bookingId = -1;
-            try { CustomerDAO dao = new CustomerDAO(); bookingId = dao.saveBooking(custId,"Baby Shower",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
+            try { if(custId!=-1) new CustomerDAO().saveBooking(custId,"Baby Shower",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
             catch(Exception ex) { JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving booking. Booking not saved in DB.","Warning",JOptionPane.WARNING_MESSAGE); }
 
-            new PaymentPage(custId,"Baby Shower",ev,prevPage, bookingId).setVisible(true);
+            new PaymentPage(custId,"Baby Shower",ev,prevPage).setVisible(true);
             dispose();
         });
 
         back.addActionListener(e -> { prevPage.setVisible(true); dispose(); });
     }
 }
+
 
 class AnniversaryForm extends EventForm {
     public AnniversaryForm(int custId, EventSelection prevPage){
@@ -613,11 +600,10 @@ class AnniversaryForm extends EventForm {
             ev.setCoupleNames(couple); ev.setYearsCompleted(years); ev.setVenueType(venueType);
             ev.setDetails(date,time,venueType);
 
-            int bookingId = -1;
-            try { CustomerDAO dao = new CustomerDAO(); bookingId = dao.saveBooking(custId,"Anniversary Celebration",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
+            try { if(custId!=-1) new CustomerDAO().saveBooking(custId,"Anniversary Celebration",ev.getDate(),ev.getTime(),ev.calculatePrice(),ev.getVenue(),ev.extraDetails()); }
             catch(Exception ex) { JOptionPane.showMessageDialog(this,"⚠ JDBC not connected or error saving booking. Booking not saved in DB.","Warning",JOptionPane.WARNING_MESSAGE); }
 
-            new PaymentPage(custId,"Anniversary Celebration",ev,prevPage, bookingId).setVisible(true);
+            new PaymentPage(custId,"Anniversary Celebration",ev,prevPage).setVisible(true);
             dispose();
         });
 
@@ -625,122 +611,94 @@ class AnniversaryForm extends EventForm {
     }
 }
 
+
 class PaymentPage extends JFrame {
 
-    public PaymentPage(int custId, String eventName, Event ev, EventSelection prevPage, int bookingId) {
-        setTitle("Payment");
-        setSize(520,520);
-        setLayout(null);
-        setLocationRelativeTo(null);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        JLabel header = new JLabel("Payment Summary", SwingConstants.CENTER);
-        header.setBounds(60,10,400,40);
-        header.setFont(header.getFont().deriveFont(18f));
-        add(header);
+public PaymentPage(int custId, String eventName, Event ev, EventSelection prevPage) {
+setTitle("Payment");
+setSize(520,500);
+setLayout(null);
+setLocationRelativeTo(null);
+setDefaultCloseOperation(EXIT_ON_CLOSE);
 
-        JTextArea details = new JTextArea();
-        details.setEditable(false);
-        details.setFont(new Font("Arial", Font.PLAIN, 15));
 
-        String venue = ev.getVenue();
-        if (venue == null || venue.trim().isEmpty()) venue = "N/A";
+JLabel header = new JLabel("Payment Summary", SwingConstants.CENTER);
+header.setBounds(60,10,400,40);
+header.setFont(header.getFont().deriveFont(18f));
+add(header);
 
-        java.text.NumberFormat nf = java.text.NumberFormat.getCurrencyInstance(new java.util.Locale("en","IN"));
-        String amountStr = nf.format(ev.calculatePrice());
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Event Type: ").append(eventName).append("\n");
-        sb.append("Date: ").append(ev.getDate()).append("\n");
-        sb.append("Time: ").append(ev.getTime()).append("\n");
-        sb.append("Venue: ").append(venue).append("\n\n");
-        sb.append("Extra Details:\n").append(ev.extraDetails()).append("\n\n");
-        sb.append("Total Amount to Pay: ").append(amountStr).append("\n");
+JTextArea details = new JTextArea();
+details.setEditable(false);
+details.setFont(new Font("Arial", Font.PLAIN, 15));
 
-        details.setText(sb.toString());
 
-        JScrollPane pane = new JScrollPane(details);
-        pane.setBounds(60,70,400,260);
-        add(pane);
+StringBuilder sb = new StringBuilder();
+sb.append("Event Type: ").append(eventName).append("\n");
+sb.append("Date: ").append(ev.getDate()).append("\n");
+sb.append("Time: ").append(ev.getTime()).append("\n");
+sb.append("Venue: ").append(ev.getVenue()).append("\n\n");
+sb.append("Extra Details:\n").append(ev.extraDetails()).append("\n\n");
+sb.append("Total Amount to Pay: ₹").append(ev.calculatePrice()).append("\n");
 
-        JButton payNow = new JButton("Pay Now");
-        payNow.setBounds(160,360,180,50);
-        add(payNow);
 
-        JLabel status = new JLabel("");
-        status.setBounds(60,430,400,20);
-        add(status);
+details.setText(sb.toString());
 
-        payNow.addActionListener(ae -> {
-            double amount = ev.calculatePrice();
-            PaymentProcessor pp = new PaymentProcessor();
 
-            payNow.setEnabled(false);
-            status.setText("Processing payment... please wait");
+JScrollPane pane = new JScrollPane(details);
+pane.setBounds(60,70,400,260);
+add(pane);
 
-            SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
-                Exception error = null;
-                @Override
-                protected Void doInBackground() {
-                    try {
-                        pp.processPayment(amount);
-                    } catch (Exception ex) { error = ex; }
-                    return null;
-                }
 
-                @Override
-                protected void done() {
-                    payNow.setEnabled(true);
-                    status.setText("");
-                    if (error == null) {
-                        if (bookingId > 0) {
-                            try { new CustomerDAO().markBookingPaid(bookingId, amount); }
-                            catch (Exception ex) { System.err.println("Could not mark booking paid: " + ex.getMessage()); }
-                        }
+JButton payNow = new JButton("Pay Now");
+payNow.setBounds(160,360,180,50);
+add(payNow);
 
-                        StringBuilder rec = new StringBuilder();
-                        rec.append("Payment Successful!\n\n");
-                        rec.append("Event: ").append(eventName).append("\n");
-                        rec.append("Amount Paid: ").append(amountStr).append("\n");
-                        rec.append("Date: ").append(ev.getDate()).append("\n");
-                        rec.append("Time: ").append(ev.getTime()).append("\n");
-                        rec.append("Venue: ").append(venue).append("\n\n");
-                        rec.append("🎉 Booking Confirmed! 🎉");
 
-                        JOptionPane.showMessageDialog(
-                            PaymentPage.this,
-                            rec.toString(),
-                            "Payment Success",
-                            JOptionPane.INFORMATION_MESSAGE
-                        );
+payNow.addActionListener(e -> {
+double amount = ev.calculatePrice();
+PaymentProcessor pp = new PaymentProcessor();
 
-                        prevPage.setVisible(true);
-                        dispose();
-                    } else {
-                        JOptionPane.showMessageDialog(
-                            PaymentPage.this,
-                            "Payment Failed: " + error.getMessage(),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                        );
-                    }
-                }
-            };
 
-            worker.execute();
-        });
-    }
+try {
+pp.processPayment(amount);
+
+
+JOptionPane.showMessageDialog(
+this,
+"Payment Successful!\nPaid Amount: ₹" + amount +
+"\n\n🎉 Booking Confirmed! 🎉",
+"Success",
+JOptionPane.INFORMATION_MESSAGE
+);
+
+
+prevPage.setVisible(true);
+dispose();
+
+
+} catch (Exception ex) {
+JOptionPane.showMessageDialog(
+this,
+"Payment Failed: " + ex.getMessage(),
+"Error",
+JOptionPane.ERROR_MESSAGE
+);
 }
+});
+}
+}
+
 
 public class EventManagementApp {
     public static void main(String[] args) {
-        DBConnection.ensureSchema();
-
         SwingUtilities.invokeLater(() -> {
-            try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignored) {}
+            try {
+
+                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+            } catch (Exception ignored) {}
             new CustomerForm().setVisible(true);
         });
     }
 }
-
-
